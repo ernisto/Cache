@@ -1,0 +1,9 @@
+# Packages
+/ServerPackages
+/Packages
+
+# Lock files
+/*.lock
+
+# Sourcemap
+/sourcemap.json

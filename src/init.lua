@@ -14,6 +14,11 @@ function Cache.async<value, key>(mode: mode?,...: mode?)
     local self = Cache.new(mode,...)
     
     --// Methods
+    function self:findResolved(...: key): value
+        
+        local promise = self:find(...)
+        return if promise and promise.Status == "Resolved" then promise:expect() else nil
+    end
     function self:getPromise(...: key): Promise<value>
         
         local promise = self:find(...)
@@ -28,6 +33,10 @@ function Cache.async<value, key>(mode: mode?,...: mode?)
             
             coroutine.yield()
         end)
+        
+        local keys = {...}
+        promise:catch(function() self:set(nil, unpack(keys)) end)
+        
         self:set(promise,...)
         return resolve, reject, onCancel
     end
@@ -36,6 +45,7 @@ function Cache.async<value, key>(mode: mode?,...: mode?)
     return self
 end
 export type AsyncCache<value, key...> = Cache<value, key...> & {
+    findResolved: (any, key...) -> value,
     getPromise: (any, key...) -> Promise<value>
 }
 

@@ -9,53 +9,97 @@ local Cache = {}
 type mode = 'k'|'v'|'kv'
 
 --// Functions
-function Cache.async<value, key>(mode: mode?,...: mode?)
+function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): AsyncCache<value, ...key>
     
-    local self = Cache.new(mode,...)
+    local self = Cache.new(-1, mode,...)
+    local loadings = Cache.new(lifetime, mode,...)
     
     --// Methods
-    function self:findResolved(...: key): value
+    function self:findResolvedPromise(...: key): Promise<value>?
         
-        local promise = self:find(...)
+        local promise = loadings:find(...)[1]
         return if promise and promise.Status == "Resolved" then promise:expect() else nil
     end
-    function self:getPromise(...: key): Promise<value>
+    function self:findPromise(...: key): Promise<value>?
         
-        local promise = self:find(...)
-        if promise then return promise end
+        local promises = loadings:find(...)
+        if not promises then return end
         
-        local resolve, reject, onCancel
-        promise = Promise.new(function(_resolve, _reject, _onCancel)
+        local promise = promises[#promises]
+        if not promise then return end
+        
+        if lifetime > 0 and os.clock() > promise.expiration then return end
+        return promise
+    end
+    
+    type job = (
+        resolve: (value) -> (),
+        reject: (any) -> (),
+        onCancel: (cancelHandler: (...any) -> ()) -> ()
+    ) -> value
+    function self:promise(job: job,...: key): Promise<value>
+        
+        local promise = Promise.new(job)
+        local loadings = loadings:find(...) or loadings:set({},...)
+        local keys = {...}
+        
+        promise:finally(function(success, value)
             
-            function resolve(...) _resolve(...); return promise end
+            local index = table.find(loadings, promise)
+            if index then table.remove(loadings, index) end
+            
+            if not success then return end
+            self:set(value, unpack(keys))
+            loadings[1] = promise
+            
+            promise.expiration = os.clock() + lifetime
+        end)
+        table.insert(loadings, promise)
+        return promise
+    end
+    function self:handlePromise(...: key): (
+        Promise<value>,
+        (value) -> Promise<value>,
+        (any) -> (),
+        (...any) -> ()
+    )
+        local resolve, reject, onCancel
+        local promise; promise = self:promise(function(_resolve, _reject, _onCancel)
+            
+            function resolve(value)
+                
+                _resolve(value)
+                return promise
+            end
             onCancel = _onCancel
             reject = _reject
             
             coroutine.yield()
         end)
-        
-        local keys = {...}
-        promise:catch(function() self:set(nil, unpack(keys)) end)
-        
-        self:set(promise,...)
-        return resolve, reject, onCancel
+        return promise, resolve, reject, onCancel
     end
     
     --// End
     return self
 end
 export type AsyncCache<value, key...> = Cache<value, key...> & {
-    findResolved: (any, key...) -> value,
-    getPromise: (any, key...) -> Promise<value>
+    findResolvedPromise: (any, key...) -> Promise<value>?,
+    findLatestPromise: (any, key...) -> Promise<value>?,
+    handlePromise: (any, key...) -> (
+        Promise<value>,
+        (value) -> Promise<value>,
+        (any) -> (),
+        (...any) -> ()
+    )
 }
 
 --// Factory
-function Cache.new<value, key...>(mode: mode?,...: mode?)
+function Cache.new<value, key...>(lifetime: number, mode: mode?,...: mode?)
     
-    --// End
-    local self = {}
-    local modes = {...}
+    --// Instance
+    local self = { mode = mode }
     local branch = setmetatable({}, { __mode = mode })
+    local modes = {...}
     
     --// Methods
     function self:find(...): value?
@@ -70,22 +114,20 @@ function Cache.new<value, key...>(mode: mode?,...: mode?)
         
         return value
     end
-    function self:set(value: value,...: key...): value?
+    function self:set<v>(value: v,...: key...): v
         
         local lastBranch = self:find(select(select('#',...)-1,...))
         local lastKey = select(-1,...)
         
-        local lastValue = lastBranch[lastKey]
         lastBranch[lastKey] = value
-        
-        return lastValue
+        return value
     end
     
     --// End
     return self
 end
 export type Cache<value, key...> = {
-    set: (any, value, key...) -> value?,
+    set: <v>(any, v, key...) -> v?,
     find: ((any, key...) -> value?)
         | ((any, ...any) -> { [any]: any|value })
 }

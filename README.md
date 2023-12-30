@@ -12,10 +12,10 @@ Implement ur own weak cache may be kinda ugly, specialy if ur cache have 2 keys/
 ```lua
 local cache = setmetatable({}, { __mode = 'k' })
 
-local function CombatSession(player1: Player, player2: Player)
+local function awaitCombatSession(player1: Player, player2: Player)
     
-    if cache[player1] and cache[player1][player2] then return cache[player1][player2] end
-    if cache[player2] and cache[player2][player1] then return cache[player2][player2] end
+    if cache[player1] and cache[player1][player2] then return cache[player1][player2]:expect() end
+    if cache[player2] and cache[player2][player1] then return cache[player2][player2]:expect() end
     
     local promise = Promise.new(coroutine.yield)
     cache[player1] = cache[player] or setmetatable({}, { __mode = 'k'})
@@ -33,22 +33,29 @@ end
 ## Solution
 ```lua
 --// Vars
-local cache = Cache.async('k', 'k')
+local cache = Cache.async(-1, 'k', 'k')
 -- setmetatable({
 --     [player1] = setmetatable({ [player2] = CombatSession }, { __mode = 'k' })
 -- }, { __mode = 'k' })
 
 --// Component
-local function CombatSessionAsync(player1: Player, player2: Player)
+local function awaitCombatSession(player1: Player, player2: Player)
     
-    local promise, resolve = cache:find(player2, player1) or cache:getPromise(player1, player2)
-    if not resolve then return promise end
+    if cache:find(player2, player1) then return cache:find(player2, player1) end
+    local promise, handle = cache:handlePromise(player1, player2)
     
     --// Instance
     local data = someYieldingCall()
     local self = {}
     
     --// End
-    return resolve(self)
+    handle(self)
+    return self
+end
+local function CombatSessionAsync(player1: Player, player2: Player)
+    
+    return cache:findPromise(player1, player2)
+        or cache:findPromise(player2, player1)
+        or cache:promise(function() awaitCombatSession(player1, player2) end)
 end
 ```

@@ -68,7 +68,7 @@ function Cache.new<value, key...>(mode: mode?,...: mode?)
             value = value[key]
         end
         
-        return branch
+        return value
     end
     function self:set(value: value,...: key...): value?
         

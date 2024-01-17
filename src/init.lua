@@ -7,6 +7,11 @@ local Cache = {}
 
 --// Types
 type mode = 'k'|'v'|'kv'
+type job<value> = (
+    resolve: (value) -> (),
+    reject: (any) -> (),
+    onCancel: (cancelHandler: (...any) -> ()) -> ()
+) -> ()
 
 --// Functions
 function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): AsyncCache<value, ...key>
@@ -32,12 +37,7 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
         return promise
     end
     
-    type job = (
-        resolve: (value) -> (),
-        reject: (any) -> (),
-        onCancel: (cancelHandler: (...any) -> ()) -> ()
-    ) -> value
-    function self:promise(job: job,...: key): Promise<value>
+    function self:promise(job: job<value>,...: key): Promise<value>
         
         local promise = Promise.new(job)
         local loadings = loadings:find(...) or loadings:set({},...)
@@ -83,8 +83,9 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
     return self
 end
 export type AsyncCache<value, key...> = Cache<value, key...> & {
+    promise: (job: job<value>, key...) -> Promise<value>,
     findResolvedPromise: (any, key...) -> Promise<value>?,
-    findLatestPromise: (any, key...) -> Promise<value>?,
+    findPromise: (any, key...) -> Promise<value>?,
     handlePromise: (any, key...) -> (
         Promise<value>,
         (value) -> Promise<value>,

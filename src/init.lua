@@ -20,12 +20,18 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
     local loadings = Cache.new(lifetime, mode,...)
     
     --// Methods
-    function self:findResolvedPromise(...: key): Promise<value>?
+    function self:findFirstPromise(...: key): Promise<value>?
         
-        local promise = loadings:find(...)[1]
-        return if promise and promise.Status == "Resolved" then promise:expect() else nil
+        local promises = loadings:find(...)
+        if not promises then return end
+        
+        local promise = promises[1]
+        if not promise then return end
+        
+        if lifetime > 0 and os.clock() > promise.expiration then return end
+        return promise
     end
-    function self:findPromise(...: key): Promise<value>?
+    function self:findLastPromise(...: key): Promise<value>?
         
         local promises = loadings:find(...)
         if not promises then return end
@@ -36,7 +42,6 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
         if lifetime > 0 and os.clock() > promise.expiration then return end
         return promise
     end
-    
     function self:promise(job: job<value>,...: key): Promise<value>
         
         local promise = Promise.new(job)
@@ -57,41 +62,14 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
         table.insert(loadings, promise)
         return promise
     end
-    function self:handlePromise(...: key): (
-        Promise<value>,
-        (value) -> Promise<value>,
-        (any) -> (),
-        (...any) -> ()
-    )
-        local resolve, reject, onCancel
-        local promise; promise = self:promise(function(_resolve, _reject, _onCancel)
-            
-            function resolve(value)
-                
-                _resolve(value)
-                return promise
-            end
-            onCancel = _onCancel
-            reject = _reject
-            
-            coroutine.yield()
-        end)
-        return promise, resolve, reject, onCancel
-    end
     
     --// End
     return self
 end
 export type AsyncCache<value, key...> = Cache<value, key...> & {
     promise: (job: job<value>, key...) -> Promise<value>,
-    findResolvedPromise: (any, key...) -> Promise<value>?,
-    findPromise: (any, key...) -> Promise<value>?,
-    handlePromise: (any, key...) -> (
-        Promise<value>,
-        (value) -> Promise<value>,
-        (any) -> (),
-        (...any) -> ()
-    )
+    findFirstPromise: (any, key...) -> Promise<value>?,
+    findLastPromise: (any, key...) -> Promise<value>?,
 }
 
 --// Factory

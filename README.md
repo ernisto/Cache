@@ -39,23 +39,19 @@ local cache = Cache.async(-1, 'k', 'k')
 -- }, { __mode = 'k' })
 
 --// Component
-local function awaitCombatSession(player1: Player, player2: Player)
-    
-    if cache:find(player2, player1) then return cache:find(player2, player1) end
-    local promise, handle = cache:handlePromise(player1, player2)
+local function CombatSession(player1: Player, player2: Player)
     
     --// Instance
     local data = someYieldingCall()
     local self = {}
     
     --// End
-    handle(self)
     return self
 end
 local function CombatSessionAsync(player1: Player, player2: Player)
     
-    return cache:findPromise(player1, player2)
-        or cache:findPromise(player2, player1)
+    return cache:findFirstPromise(player1, player2)
+        or cache:findFirstPromise(player2, player1)
         or cache:promise(function() awaitCombatSession(player1, player2) end)
 end
 ```

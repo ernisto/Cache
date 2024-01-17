@@ -104,19 +104,22 @@ function Cache.new<value, key...>(lifetime: number, mode: mode?,...: mode?)
     --// Methods
     function self:find(...): value?
         
+        local lastBranch
         local value = branch
         
         for index, key in {...} do
             
             if not value[key] and index < select('#',...) then value[key] = setmetatable({}, { __mode = modes[index] }) end
+            
+            lastBranch = value
             value = value[key]
         end
         
-        return value
+        return value, lastBranch
     end
     function self:set<v>(value: v,...: key...): v
         
-        local lastBranch = if select('#',...) > 1 then self:find(select(select('#',...)-1,...)) else branch
+        local _lastValue, lastBranch = self:find(select(1 :: any,...))
         local lastKey = select(-1,...)
         
         lastBranch[lastKey] = value

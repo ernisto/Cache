@@ -48,16 +48,17 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
         local loadings = loadings:find(...) or loadings:set({},...)
         local keys = {...}
         
-        promise:finally(function(success, value)
+        promise:tap(function(value)
             
-            local index = table.find(loadings, promise)
-            if index then table.remove(loadings, index) end
-            
-            if not success then return end
             self:set(value, unpack(keys))
             loadings[1] = promise
             
             promise.expiration = os.clock() + lifetime
+        end)
+        promise:finally(function(success, value)
+            
+            local index = table.find(loadings, promise)
+            if index then table.remove(loadings, index) end
         end)
         table.insert(loadings, promise)
         return promise

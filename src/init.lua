@@ -25,10 +25,11 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
         local promises = loadings:find(...)
         if not promises then return end
         
-        local promise = promises[1]
-        if not promise then return end
+        local promise
+            repeat promise = promises[1]
+            until lifetime < 0 or os.clock() < promise.expiration
+            or not table.remove(promises)
         
-        if lifetime > 0 and os.clock() > promise.expiration then return end
         return promise
     end
     function self:findLastPromise(...: key): Promise<value>?
@@ -36,31 +37,53 @@ function Cache.async<value, key>(lifetime: number, mode: mode?,...: mode?): Asyn
         local promises = loadings:find(...)
         if not promises then return end
         
-        local promise = promises[#promises]
-        if not promise then return end
+        local promise
+            repeat promise = promises[#promises]
+            until lifetime < 0 or os.clock() < promise.expiration
+            or not table.remove(promises)
         
-        if lifetime > 0 and os.clock() > promise.expiration then return end
         return promise
     end
     function self:promise(job: job<value>,...: key): Promise<value>
         
-        local promise = Promise.new(job)
+        local traceback = debug.traceback("unresolved cache", 2)
+        local resolve, reject, onCancel
+        
         local loadings = loadings:find(...) or loadings:set({},...)
         local keys = {...}
         
-        promise:tap(function(value)
-            
-            self:set(value, unpack(keys))
-            loadings[1] = promise
+        local promise = Promise.new(function(...) resolve, reject, onCancel = ...; coroutine.yield() end)
+        promise.expiration = 1/0
+        
+        table.insert(loadings, promise)
+        promise:tap(function(result)
             
             promise.expiration = os.clock() + lifetime
-        end)
-        promise:finally(function(success, value)
             
-            local index = table.find(loadings, promise)
+            self:set(result, unpack(keys))
+            loadings[1] = promise
+        end)
+        
+        task.spawn(function()
+            
+            local success, result = xpcall(job, debug.traceback, resolve, reject, onCancel)
+            if promise:getStatus() == 'Started' then
+                
+                if success then
+                    
+                    warn('unresolved cache (the return has used instead)')
+                    print(traceback)
+                    resolve(result)
+                else
+                    
+                    warn(`error: {result}`)
+                    reject(`has not possible get trait\n{result}`)
+                end
+            end
+            
+            local index = table.find(loadings, promise, 2)
             if index then table.remove(loadings, index) end
         end)
-        table.insert(loadings, promise)
         return promise
     end
     
